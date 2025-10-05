@@ -1,0 +1,11 @@
+model,min,auc,max,location
+full_test_kearney,0.983,0.993,1,Kearney Lake
+full_test_b2,0.973,0.987,1,Lake Banook 2
+full_test_cunard,0.979,0.986,1,Cunard Pond
+full_test_lc1,0.866,0.893,0.924,Lake Charles 1
+full_test_sc,0.834,0.879,0.919,SC
+full_test_fletcher,0.783,0.853,0.889,Lake Fletcher
+full_test_2024,0.701,0.759,0.812,full_test_2024
+full_test_lc2,0.698,0.729,0.752,Lake Charles 2
+full_test_inp,0.476,0.656,0.79,INP
+full_test_trr,0.093,0.293,0.521,TRR

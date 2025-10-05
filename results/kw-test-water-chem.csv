@@ -1,0 +1,7 @@
+name,statistic,p.value,parameter,method,p_value_tidy
+p_ugl,178.95666902515714,0,11,Kruskal-Wallis rank sum test,<0.05
+chloride_mgl,457.2877437166153,0,11,Kruskal-Wallis rank sum test,<0.05
+tn_ugl,324.555926677695,0,11,Kruskal-Wallis rank sum test,<0.05
+colour,368.44042981869734,0,11,Kruskal-Wallis rank sum test,<0.05
+doc_mgl,413.3202902693643,0,11,Kruskal-Wallis rank sum test,<0.05
+toc_mgl,406.57882835546826,0,11,Kruskal-Wallis rank sum test,<0.05

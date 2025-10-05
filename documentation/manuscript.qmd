@@ -1,0 +1,296 @@
+---
+title: qPCR-Based Prediction of Low-Level Microcystin-LR Using *mcy*E and Passive Sampling Across Multiple Lakes Over Three Years
+format: 
+  docx:
+    reference-doc: StylesTemplate.docx
+    number-sections: true
+    fig-caption: true
+bibliography: references.bib
+csl: water-research.csl
+---
+
+David J Redden^1\*^, Clarke Brown^1^, Morgan Harasymchuk^1^, Saksham Bafna^1^, Justin Laforest^2^, Nicole Taylor^2^, Lindsay Anderson^1,3^, and Graham A. Gagnon^1^
+
+<br>
+
+^1^ Centre for Water Resources Studies, Department of Civil & Resource Engineering, Dalhousie University, 1360 Barrington St. Halifax, Nova Scotia, Canada
+
+^2^ City of Moncton, 655 Main St., Moncton, New Brunswick, Canada
+
+^3^ Halifax Water, 450 Cowie Hill Road, Halifax, Nova Scotia, Canada
+
+^\*^ Corresponding author
+
+<br>
+
+<br>
+
+<br>
+
+Manuscript submitted for possible publication in *Water Research X*
+
+<br>
+
+<br>
+
+<br>
+
+<br>
+
+<br>
+
+\
+Date: August XX, 2025
+
+\newpage
+
+# Highlights {.unnumbered}
+
+-   Passive sampling and qPCR targeting the *mcy*E gene were used to monitor low concentrations (\< 1 µg L^-1^) of MC-LR over three years in ten lakes.
+
+-   Differences in MC-LR detection between lakes were not explained by differences in bulk nutrients concentrations or NOM content.
+
+-   Random forest and Bayesian hierarchical logistic regression identified *mcy*E as the best predictor of MC-LR presence.
+
+-   Interpretation of *mcy*E gene concentrations must be tailored to specific locations and times when assessing risk of low-level MC-LR
+
+\newpage
+
+# Graphical Abstract {.unnumbered}
+
+![Created in https://BioRender.com](../figures/Graphical%20Abstract.png)
+
+\newpage
+
+# Abstract {.unnumbered}
+
+Microcystin-LR (MC-LR) is a cyanobacterial hepatotoxin that poses health risks even at low concentrations. Because quantitative analysis of MC-LR is costly and time-consuming, water managers rely on early warning tools to determine when confirmatory testing is warranted. Quantitative PCR (qPCR) targeting the *mcy* genes has emerged as one such tool, but its reliability across lakes and seasons — particularly at low toxin concentrations — remains unclear. In this study, we used passive sampling to detect low concentrations (\< 1 µg L^-1^) of MC-LR, and paired this with qPCR monitoring of *mcy*E to assess the utility of qPCR for monitoring low-level MC-LR presence over three years across ten lakes (total of n = 893 distinct samples). We developed location- and year-specific hierarchical Bayesian models to estimate the probability of MC-LR detection from *mcy*E concentrations and environmental covariates. Although *mcy*E was the strongest overall predictor, its relationship with MC-LR varied substantially by lake and year, and these hierarchical models were essential in capturing this variability. These findings highlight the promise of *mcy*E-based early warning systems for low-concentrations of MC-LR, but emphasize that interpretation must be tailored to local ecological and seasonal conditions.
+
+<br>
+
+<br>
+
+<br>
+
+<br>
+
+Keywords: Cyanotoxin monitoring, microcystins, qPCR, *mcy*E,
+
+\newpage
+
+```{r}
+#| label: setup
+#| include: false
+knitr::opts_chunk$set(echo = FALSE, message = FALSE, dev = "png", dpi = 600)
+
+library(tidyverse)
+library(pakret)
+
+# function to write out numbers less than 10
+number_to_words <- function(x) {
+  words <- c("zero", "one", "two", "three", "four", "five", 
+             "six", "seven", "eight", "nine")
+  if (x %in% 0:9) return(words[x + 1])
+  return(as.character(x))  # fallback
+}
+
+# read in full data set
+complete_data <- read_csv(here::here("data-cleaned/data-complete.csv")) |> 
+  group_by(location, year, week) |> 
+  mutate(n = n()) |> 
+  ungroup() |> 
+  assertr::verify(n == 1) |> 
+  select(-n)
+  
+# read in summary tables of water chemistry
+lake_chem_table <- read_csv(here::here("tables/lake_chem_table.csv"))
+lake_chem_table_yearly <- read_csv(here::here("tables/lake_chem_table_yearly.csv"))
+
+# some useful numbers
+all_locations <- complete_data |> distinct(location) |> pull(location)
+all_lakes <- complete_data |> 
+  distinct(location) |> 
+  mutate(
+    location = str_remove(location, "\\d"),
+    location = trimws(location)) |> 
+  distinct(location) |>
+  pull(location)
+
+n_locations <- length(all_locations)
+n_lakes <- length(all_lakes)
+
+```
+
+# Introduction {#sec-introduction}
+
+Microcystins are a group of cyanotoxins produced by several cyanobacterial genera, including *Microcystis*, *Planktothrix*, and *Dolichospermum*, and are considered the most widely distributed cyanotoxins in freshwater [@rastogi_microcystins_2014; @wei_biological_2024]. Microcystins are well-known hepatotoxins with established health risks at low concentrations (e.g., @epa_drinking_water_2015 10-day health advisory level of 0.3 µg L^-1^ total microcystins for children under six years of age), with recent work suggesting that even lower thresholds (0.01 to 0.03 µg L^-1^) might be warranted [@miller_cyanobacterial_2017].
+
+Passive sampling is a valuable tool for detecting microcystins at low concentrations. When using grab sampling, large water volumes may need to be concentrated (e.g., solid phase extraction) to recover sufficient toxin mass for quantification, particularly when concentrations are low. Additionally, cyanobacteria are mobile within the water column, subject to wind- and current-driven transport, and capable of episodic toxin production [@chorus2021], so discrete grab samples may fail to capture the full extent of microcystin presence. Passive samplers, by contrast, integrate exposure over time providing a more representative assessment of toxin occurrence [@loaiza2024cyanotoxin]. Several studies have shown that passive sampling results correlate with grab sample results [@jasa_application_2019; @wang_development_2022] or detect microcystins that are not detected using grab samples [@kohoutek_evaluation_2010; @kudela_characterization_2011; @wiltsie_algal_2018; @brophy_exploring_2019].
+
+Regardless of the sampling method used, quantification of microcystins relies on expensive and time-consuming analytical techniques — typically liquid chromatography with tandem mass spectrometry (LC-MS/MS) and enzyme-linked immunosorbent assays (ELISA). In addition to their cost and relatively long analytical turnaround times, these methods are inherently retrospective. For these reasons, monitoring programs typically adopt a tiered approach, using other less-expensive and more-rapid tools to provide early warning of potential toxin events, and reserving LC-MS/MS or ELISA for confirmation when microcystin concentrations are likely to approach regulatory thresholds [@chorus2021; @almuhtaram_state_2021; @kibuye_utility_2021; @schurmann_risk_2024].
+
+Quantitative polymerase chain reaction (qPCR) has become a common tool for assessing the potential for cyanotoxins, and microcystins in particular [@pacheco_is_2016; @feist_genetic_2021]. Microcystin biosynthesis is regulated by the *mcy* gene cluster, [@kaebernick_multiple_2002; @tillett_structural_2000; @dittmann1997; @nishizawa_polyketide_2000] a conserved set of genes found across microcystin producing genera [@christiansen_microcystin_2003; @hisbergues2003; @rouhiainen2004; @wei_biological_2024]. While the absence of this cluster precludes microcystin production [@dittmann1997; @tillett_structural_2000], its presence does not guarantee toxin synthesis. Regulation of these genes is not fully understood, but depends on a variety of factors including light, temperature, nutrients (primarily phosphorus and nitrogen), trace metals, and predation [@neilan_environmental_2013; @dai2016; @wei_biological_2024]. Further, partial deletions, insertions, and point mutations may result in cyanobacteria with *mcy* genes that are incapable of toxin synthesis [@kaebernick_spontaneous_2001; @christiansen2006; @christiansen2008; @noguchi2009].
+
+Correlations between *mcy* gene concentrations and microcystin levels depend on the specific *mcy* gene targeted [@pacheco_is_2016]. Studies that have developed qPCR assays based on the *mcy*E gene have found that by targeting different regions of that gene, it is possible to detect all major microcystin producers [@jungblut2006; @al-tebrineh2011; @al_tebrineh_multiplex_2012], as well as specific microcystin-producing genera [@vaitomaa2003; @sipari2010]. Consequently, *mcy*E has become a widely used target for monitoring microcystins in freshwater ecosytems [@padovan2023; @gonzalesferraz2024; @madany2025; @panksep2020; @lu2020; @duan2022]. While many studies have found correlations between *mcy* genes and microcystin concentrations, few have explored how qPCR results can inform public health and safety decisions for water utilities and resource managers.
+
+While previous studies have demonstrated that *mcy*E concentrations can serve as early warning indicators of microcystins in a single-lake system with moderate (\> 8 µg L^-1^) microcystin concentrations [@lu2020; @duan2022], it remains unclear whether this approach can be generalized across lakes with different physicochemical conditions and cyanobacterial communities, and specifically in systems where MC-LR concentrations are low. In this work, we evaluated the utility of *mcy*E as a predictor of infrequent, low (\< 1 µg L^-1^) MC-LR concentrations over three years, across multiple lakes. Using passive samplers to detect low-level MC-LR events often missed by grab samples, we developed location-specific, time-varying probabilistic models for MC-LR detection based on *mcy*E concentrations. We also assessed whether incorporating additional environmental or climate predictors could improve predictive performance beyond *mcy*E alone.
+
+# Methods
+
+## Sample locations and collection methodology {#sec-methods-sampling}
+
+The eight lakes included in the monitoring program ranged in size from 0.6 to 160 ha and the maximum depths ranged from 2 to 30 m (Table S3). Turtle Creek Reservoir (TCR), Tower Road Reservoir (TRR), and Irishtown Nature Park (INP) are current or former water supply lakes situated in areas that are mostly forested. Lake Fletcher is situated in a suburban residential area and a large portion of its shoreline and watershed is forested. The remaining lakes are popular recreational sites in urban areas with a mix of commercial and residential development. Sample locations were chosen to either assess risks to recreational users, or were in areas where suspected cyanobacterial blooms were observed in the past.
+
+At TRR and TCR, grab samples were collected from the side of a boat; at all other locations, grab samples were collected from the shoreline. All grab samples were taken within the top 1 m of the water column. Passive samples — comprising 1000 mg of Oasis HLB adsorbent (Waters Limited, Stamford Ave., UK) in a heat-sealed nylon mesh bag with 25 µm pore size — were held in plastic sampling cages and affixed at the sampling location. The sampling cages were modified versions of those used by @hayes2021. When grab samples were collected, the corresponding passive sample was removed from the sampling cage and placed in a falcon tube. A new bag of adsorbent was then placed in the sampling cage and left in the water until the next sampling event — for a total sampling duration of 7 days for each passive sample. We collected samples weekly from late-May until mid-November on the same day of the week and at approximately the same time of day at each site. Field blanks were included during each sampling event. Further details regarding sample bottle preparation and sampling procedure are provided in Supplementary Methods.
+
+## Physicochemical and climate data
+
+A hand held sonde (YSI Ohio, USA) was used to measure in-situ temperature, dissolved oxygen, conductivity, total dissolved solids, and pH. Turbidity, total organic carbon (TOC), total nitrogen (TN), and elemental composition — including total phosphorus — were measured using unfiltered lake water. Samples were filtered through 0.45 µm polysulfone membrane filters for measurement of dissolved organic carbon (DOC), dissolved anions (chloride, nitrate, nitrite, sulfate, and orthophosphate), and characterization of true color and $\text{UV}_{\text{254}}$. Details regarding these analyses are provided in Supplementary Methods.
+
+Historical precipitation and temperature data for the weather stations nearest the study lakes — with complete data over the monitoring period — was obtained from Environment Canada [@ECCC2025]. For INP, TCR, and TRR data was obtained from the Moncton Romeo Leblanc International Airport Station; for all other lakes, data was obtained from the Shearwater RCS station. Moving averages (3- and 7-day) for a variety of temperature and precipitation measures were computed and used as predictor variables in random forest modelling.
+
+## DNA extraction
+
+Two DNA extraction methods were used during this monitoring program. In 2022, samples were concentrated onto 25 mm, 0.8 µm pore size Versapore® acrylic copolymer membrane filters (Pall Corporation, Port Washington, NY) and extracted by bead-beating in lysis buffer. In 2023 and 2024, water samples were concentrated onto 47 mm, 0.22 µm polyvinylidene fluoride (PVDF) membrane filters (MilliporeSigma, Burlington, MA) and extracted using the DNeasy PowerWater Kit (Qiagen, Venlo, The Netherlands). Filtered water volumes varied between samples and years, with lower volumes obtained in 2022 due to the smaller filter size. Across the program, water was filtered until the membranes clogged, with filtered volumes ranging from 45 to 525 mL (median: 350 mL). In 2024, a subset of samples was extracted using both methods to compare the resulting qPCR gene copy concentrations. The DNeasy PowerWater method yielded higher gene copy concentrations, particularly at lower concentrations (Figure S1). Further details regarding DNA extraction and quality control are provided in Supplementary Methods.
+
+## qPCR
+
+Phytoxigene™ CyanoDTec Total Cyanobacteria and Toxin Gene kits (Phytoxigene™, Inc., Akron, OH) were used to quantify cyanobacteria-specific 16S rRNA and cyanotoxin synthesis genes. The Toxin Gene kit targets the *mcy*E*/nda*F, *cyr*A, and *sxt*A genes required for production of microcystins/nodularins, cylindrospermopsins, and saxitoxins, respectively. Note that *mcy*E *and nda*F are orthologous gene that encode for an aminotransferase domain required for the production of microcystins and nodularins, respectively [@jungblut2006]. Herein, we simply refer to this gene target as *mcy*E. We chose to use these qPCR assays because they are currently used by the Ohio EPA for cyanobacterial monitoring [@OhioEPA2018_qPCR] and given their commercial availability, they are likely to be used by other water utilities or resource managers that do not have internal capacity for qPCR assay development.
+
+Development of the assays, including coverage and primer/probe sequences is provided in @al_tebrineh_detection_2010 and @al_tebrineh_multiplex_2012. Additional details regarding qPCR methodology, quality control, and quantification of gene concentrations are provided in Supplementary Methods.
+
+## MC-LR analysis {#sec-methods-mclr}
+
+MC-LR was sampled using grab and passive samples. Grab samples were analyzed following three cycles of freeze-thaw to lyse the cells and thus measure total (intra- and extracellular) MC-LR in the water. Passive samples were analyzed by eluting adsorbed MC-LR from the Oasis HLB adsorbent (Waters Limited, Stamford Ave., UK) and the nylon bag used to hold it. It is assumed that passive samplers predominantly adsorb extracellular MC-LR and do so over the 7-day deployment period [@kudela_characterization_2011; @lance2021].
+
+Concentrations obtained from analysis of the passive samplers are given in units of µg MC-LR per gram of adsorbent (µg g^-1^). Converting this to an aqueous concentration would require determining the sampling rate constant of the passive sampler at each location [@harman2012; @wang_development_2022]. Throughout this work, we treated the detection of MC-LR on passive samplers as a binary indicator of the presence of extracellular MC-LR in the water. Further details regarding processing and analysis of grab and passive samples is provided in Supplementary Methods.
+
+## Data processing and analysis {#sec-methods-data}
+
+All statistical analyses were performed in R [@r_citation] using the R Studio environment [@rstudio]. The 'dunn.test' package [@dunn_package] was used for post-hoc pairwise comparisons (with Benjamini-Hochberg correction) of physicochemical water parameters and `r pkrt("zoo")` was used to compute moving averages of climate data. Other R packages used for specific tasks are detailed below. Data manipulation and figure generation made use of the following packages:`r pkrt_list("tidyverse", "tidymodels", "ggtext", "tidybayes", "glue", "ggsci")`. All data and code required to reproduce the analyses are available in a GitHub repository [@dreddenGit].
+
+The qPCR data contained left-censored (below LOD) observations, and the qPCR, MC-LR, and water chemistry data all contained missing observations. Many statistical methods cannot account for missing or censored data and instead rely on substitution and/or analysis using only complete cases, both of which lead to biased results and errors [@helsel2011statistics]. In this work we replaced missing data in two ways: 1) through multiple imputation using random forests and 2) Bayesian modelling where missing observations are treated as parameters in the model and estimated during model fitting. Bayesian estimation was also used account for censored predictors the hierarchical logistic regression modelling. Any variable with more than 40% missing observations was excluded from all analyses.
+
+### Random forest modelling {#sec-methods-rf}
+
+The 'ranger' package [@Wright2017] was used to fit random forest (RF) models to classify the presence (i.e. $\ge$ LOD) or absence of MC-LR in grab and passive samples, using all available physicochemical, climate, and qPCR variables as predictors. Prior to model fitting, missing predictor values were multiply imputed using the 'missRanger' package [@missRanger]. A total of 25 imputed datasets were generated, and RF models were fitted separately to each dataset for prediction of MC-LR presence in grab and passive samples. To verify the appropriateness of imputed values, the distributions of variables were compared before and after imputation (Figures S2 to S6). Variable importance (measured by mean decrease in impurity) was extracted from each RF model.
+
+To evaluate predictive performance for passive sample models, two testing strategies were used: (1) holding out all data from 2024, and (2) holding out one lake at a time. Models were trained on the remaining data and used to predict MC-LR presence in the held-out set. For grab samples, holding out 2024 left too few detections for model training, so only the one-lake-out cross-validation approach was used. RF hyperparameters (*mtry* and *min_n*) were tuned during training and upsampling (via the *sample.fraction* argument in 'ranger') was used during training to address class imbalance (i.e., more non-detect than detect observations).
+
+Predictive performance was summarized across imputations using receiver operating characteristic (ROC) curves, the area under the ROC curve (AUC), and variable importance metrics, with results reported as the median and interquartile range (IQR) across the 25 imputed datasets. For each sampling method, ROC curves are only presented for locations at which there were at least three MC-LR detections.
+
+### Hierarchical logistic regression {#sec-methods-regression}
+
+Hierarchical logistic regression models were used to predict the probability of detectable MC-LR in passive samplers, using the variables identified as important in the random forest models. These Bayesian models were fit using the 'brms' package [@brms_package] with custom modifications implemented via the 'bgamcar1' package [@bgamcar1]. This approach allows each missing or censored predictor variable to be included as a model parameter that is estimated during fitting, with censored values constrained below their detection limit. Functions from 'bgamcar1' were adapted to support the multiple left-censoring limits of qPCR variables. Missing or censored variables were predicted using correlated covariates (Figure S7).
+
+We fit a series of models incorporating different combinations of predictor variables, smooth functions, and varying intercepts and slopes (i.e., random effects). These models were compared using Pareto Smoothed Importance Sampling (PSIS) as an approximation of leave-one-out cross-validation (LOO-CV; @vehtari_practical_2017), implemented via the 'loo' package [@loo_package]. Final model selection was based on a combination of LOO information criterion (LOOIC), model stability (Pareto-*k* diagnostics), and ecological plausibility.
+
+Model fit was evaluated using posterior predictive checks via the 'bayesplot' package [@bayesplot], which compare the observed data to simulations drawn from the posterior distribution [@bayesplot_paper]. We also compared predicted probabilities to the observed proportion of MC-LR detections to confirm that the model adequately captured empirical variation.
+
+All predictor variables were scaled by their standard deviation and mean-centered prior to model fitting. qPCR data were $\text{log}_\text{10}$ transformed before scaling and centering. All models were run with no divergent transitions and $\widehat{\text{R}}$ values $\le$ 1.01, indicating good Markov Chain Monte Carlo (MCMC) convergence.
+
+# Results and discussion
+
+## Water chemistry differs between lakes and years {#sec-results-water-chem}
+
+Significant differences (Kruskal-Wallis test, *p* \< 0.05) in key water chemistry parameters were observed across lakes (@fig-nutrients), with post-hoc pairwise comparisons (Dunn test, adjusted *p* \< 0.05) confirming inter-lake variability (Figure S8). Among the most notable differences were chloride concentrations and measures of natural organic matter (NOM) including TOC/DOC and true colour. At Penhorn Lake and both sites in Lake Banook, chloride concentrations were an order of magnitude higher than at the other lakes, and measures of NOM were generally lower. These two lakes are subject to winter road salting and urban runoff [@bermarija2023assessing]. In contrast, INP, TCR, and TRR — lakes located in predominantly forested regions with minimal anthropogenic influence — had low chloride concentrations. INP had the highest concentrations of total phosphorus (TP) and total nitrogen (TN), along with elevated measures of NOM.
+
+![Select water chemistry values measured at the study locations over the duration of the three year monitoring program. The colour of the points denotes the year of sampling. Differences in each water chemistry parameter between locations were tested using the Kruskal-Wallis test, as noted on each panel.](../figures/nutrients.png){#fig-nutrients width="100%"}
+
+A major rainfall event in July 2023 caused flash flooding in catchments of several study lakes, leading to elevated concentrations of TOC/DOC, true colour, and TN. Increases in NOM were particularly pronounced in INP, Kearney Lake, and Lake Fletcher, while spikes in TN were most apparent at Lake Banook. These shifts in water chemistry may have influenced MC-LR production in 2023 (See @sec-results-mclr).
+
+## Low, infrequent microcystin-LR concentrations highlight utility of passive sampling {#sec-results-mclr}
+
+Grab sample MC-LR concentrations were low and relatively infrequent, with all detections below 1.0 µg L^-1^ and most occurring between mid-July and late-September (@fig-all-toxins and Figure S9). During 2023, MC-LR was not detected in grab samples at any location; in 2024, detections were more frequent and concentrations were generally higher than in 2022.
+
+Passive samples detected MC-LR more frequently than grab samples (@fig-all-toxins). In many cases there was an initial sampling event where both methods detected MC-LR and then, in the following weeks, MC-LR continued to be detected via passive sampling. This was likely the result of passive sampling detecting extracellular (i.e. dissolved) MC-LR (See @sec-methods-mclr), and microcystins being predominantly intracellular until cell lysis [@buratti_cyanotoxins_2017]. There were also events where grab and passive sample detections did not co-occur and the passive samples did not detect MC-LR in subsequent weeks (e.g. Cunard Pond). In those cases, adsorption of MC-LR on the passive samples may have been inhibited due to physicochemical conditions in the water [@godlewska_pollutant_2021]. Finally, there were many events where MC-LR was only detected using the passive samples. These cases highlight the ability of the passive samples to accumulate MC-LR over time — providing a stronger signal and/or capturing episodic MC-LR missed by grab samples.
+
+As noted in @sec-methods-mclr, MC-LR concentrations obtained from passive samples are difficult to interpret (µg g^-1^) or compare against guideline or regulatory concentrations (µg L^-1^). Thus, we have used data from passive samplers as binary indicators of the presence of dissolved MC-LR. However, temporal trends in the passive sample concentrations clearly coincide with grab samples concentrations. This indicates the ability of the passive samplers to detect dissolved MC-LR when total MC-LR was not detected in grab samples.
+
+![Concentrations of MC-LR measured in passive (µg g^-1^) and grab (µg L^-1^) samples at each location. Grab samples that were measured as below the LOD have not been shown, but transparent points represent MC-LR concentrations from passive samples that were below the LOD. Dates where there are no points for passive samples indicate that passive samples were not collected. Vertical dashed lines highlight passive samples corresponding to grab sample detections.](../figures/passive-mclr.png){#fig-all-toxins width="100%"}
+
+## Bulk nutrients don't adequately explain differences in microcystin-LR detection rates between lakes {#sec-results-mclr-nutrients}
+
+Correlations between the frequency of MC-LR detection in the passive samples and key physicochemical parameters revealed weak associations with nutrient concentrations (@fig-nutrient-toxins), but moderate, positive associations with indicators of NOM — including TOC, DOC (not shown), and true colour. While some cyanobacteria can metabolize organic carbon under low-light or dark conditions, in most lake ecosystems, atmospheric $\text{CO}_{\text{2}}$ is the primary carbon source [@stebegg2023]. Thus, the observed relationships between NOM and MC-LR detection likely reflect increased cyanobacterial biomass contributing to NOM, or shared drivers such as eutrophication and watershed inputs that elevate NOM and promote cyanobacterial growth.
+
+Concentrations of total phosphorus and total nitrogen differed between locations (@fig-nutrients); however, the magnitudes of these differences were typically small (Figure S8). For this reason, the weak association between nutrients and MC-LR detections is not unexpected. Furthermore, total cyanobacterial abundance (total cyanobacterial 16S rRNA gene) was similar across most locations (@sec-results-qpcr). This indicates that conditions required for cyanobacterial growth are present at most locations, but the factors driving MC-LR production likely involve additional biological or environmental variables beyond bulk nutrient or NOM concentrations.
+
+![Concentrations of select physicochemical parameters at each location. Samples in which MC-LR was detected in passive samples are indicated by red points; non-detects are shown in gray. Locations are ordered top to bottom by the proportion of samples with MC-LR detections, indicated in parentheses (detections / total samples). Spearman correlations coefficients, $\rho$, were calculated between MC-LR detection rates and the median concentration of each parameter across all samples at a location. These values are shown in the top-right of each panel.](../figures/nutrients-and-toxins.png){#fig-nutrient-toxins fig-align="left" width="95%"}
+
+## qPCR results reveal different cyanobacterial communities across lakes {#sec-results-qpcr}
+
+qPCR results for total cyanobacterial 16S rRNA and *mcy*E gene concentrations from 2022 to 2024 revealed clear spatial and temporal variation across sites. Total cyanobacterial 16S rRNA gene concentrations typically ranged between 10^4^ and 10^6^ GC mL^-1^, with no consistent seasonal trends (@fig-qpcr). In contrast, *mcy*E concentrations varied more widely. Sites with infrequent MC-LR detections (e.g., Lake Banook 1 and 2, Penhorn Lake, TRR, TCR) generally exhibited lower *mcy*E concentrations. Seasonal peaks in *mcy*E often occurred in August or September, aligning with periods of increased MC-LR detections in both grab and passive samples (@fig-all-toxins). However, these peaks were not always well-defined — in some locations and years, *mcy*E concentrations remained low or fluctuated modestly, making it difficult to distinguish meaningful increases from baseline variation. Across all locations, the frequency of MC-LR detection in passive samples was moderately and positively correlated with *mcy*E concentrations, and with the *mcy*E:16S ratio, but only weakly correlated with total cyanobacteria (Figure S10). On their own, these gene concentrations do not reliably identify locations with more frequent MC-LR detections.
+
+Cyanobacterial genomes typically contain one to four copies of the 16S rRNA gene [@engene2011; @schirrmeister2012], so changes in its concentration may reflect changes in total cyanobacterial abundance and/or taxonomic composition. In contrast, *mcy*E is a single copy gene [@tanabe2004; @kaebernick_multiple_2002; @kaneko2007], making it a more direct proxy for the abundance of microcystin-producing taxa. Thus, changes in *mcy*E concentrations that occur without corresponding changes in 16S rRNA gene concentrations likely indicate shifts in community composition toward or away from microcystin producers. Additionally, differences in the *mcy*E:16S ratio suggest distinct cyanobacterial communities across locations.
+
+These patterns highlight the limitations of using gene concentrations alone to predict toxin presence, particularly in lakes with low or infrequent MC-LR detections. Instead, the results point to site-specific relationships between toxin-producing taxa and local environmental conditions. This variability reinforces the need for a probabilistic, lake-specific modeling approach, as developed in the remainder of this study.
+
+![Concentrations of total cyanobacteria 16S rRNA (blue) and *mcy*E genes (yellow) at each study location over three years of monitoring. Transparent points represent values that were below their respective limits of detection. Values clustered along the x-axis are samples for which there was no signal detected during qPCR. A pseudocount (10^-3^) was added to these observations (for plotting only) to distinguish them from missing samples that were not analyzed.](../figures/qpcr.png){#fig-qpcr width="100%"}
+
+## Random forest models identify *mcy*E as the most important predictor {#sec-results-rf}
+
+We trained random forest models to identify the most important qPCR, physicochemical, and climate variables for predicting the presence of MC-LR in grab and passive samples. Models were initially trained on data from 2022 and 2023 and tested by predicting the presence of MC-LR in 2024 (Figure S11). The model predicting MC-LR in grab samples showed good discriminatory performance (AUC = 0.759), while the model for passive samples was more limited (AUC = 0.653). Across both models, important predictors included *mcy*E gene concentrations, their 7-day lagged values, 16S rRNA gene concentrations, their lagged values, and a variety of physicochemical variables.
+
+It was anticipated that *mcy*E (and/or lagged *mcy*E ) would be the most important variable for prediction of MC-LR. This was the case for grab samples, where the concentration of *mcy*E from the previous week was more important than any other variable. However, for prediction of MC-LR in passive samples, TDS, *mcy*E, and cyanobacterial 16S rRNA were of nearly equal importance. TDS and other physicochemical variables (e.g., iron, aluminum, and measures of NOM like TOC/DOC, $\text{UV}_{254}$ and colour) differed widely (Kruskall-Wallis *p* \< 0.05) between the years as a result of the flash flooding in 2023. In addition to their effects on physicochemical characteristics, extreme events like this are known to perturb aquatic microbial communities [@shabarova_recovery_2021] — including cyanobacteria [@walker_functionally_2022]. Associations between MC-LR and physicochemical variables identified by the models might be the result of that shared influence, and the predictive ability of TDS and other physicochemical variables may not be generalizable.
+
+To ensure generalizability of our findings, we retrained the models using data from all three years, holding out one location at a time as the test set. With this approach, the discriminatory performance of the models when predicting MC-LR in grab samples was good (@fig-roc a), while performance for passive samples was more variable (@fig-roc c). Some passive sample models had excellent discriminatory performance (e.g., models tested on Lake Charles 1: AUC = 0.96; Shubenacadie Canal (SC) and Lake Charles 2: AUC = 0.9), whereas others performed poorly (e.g., models tested on TCR: AUC = 0.59; and INP: AUC = 0.54). In both cases, *mcy*E and lagged *mcy*E consistently ranked as the most important predictors (@fig-roc b and d). For grab samples, other important predictors included several climate variables, while for passive samples, physicochemical variables played a larger role. As expected, *mcy*E remained the strongest overall predictor of MC-LR, with no other variables in the dataset approaching its importance. However, its utility as a predictor varied greatly between locations, as seen in the discriminatory performance of these random forest models.
+
+![Receiver operating characteristic (ROC) curves for random forest models trained on three years of data, using leave-one-location-out cross-validation, to predict MC-LR presence in grab (**a**) and passive (**c**) samples. Each curve represents model performance on a held-out test location, with the area under the curve (AUC) indicated in the legend. Panels (**b**) and (**d**) show the median relative importance of the 15 most important predictors for grab and passive MC-LR prediction, respectively, with error bars representing the interquartile range across test folds. Shading indicates whether a predictor appeared in the top 15 most important variables for both grab and passive MC-LR models (black) or only for one (grey).](../figures/roc-var-importance-passive-grab.png){#fig-roc width="100%"}
+
+## Lake-and-year specific *mcy*E models offer best fit to observed data {#sec-results-regression}
+
+We fit five hierarchical logistic regression models to estimate the probability of detecting extracellular MC-LR in passive samples, and compared them using leave-one-out cross-validation (LOOIC). The first was a null model with only an intercept and random effects for location and year. The remaining four models included a fixed effect for year and location-year-specific smooth functions of sampling week, in addition to: (1) a fixed effect for *mcy*E with location-specific intercepts, (2) *mcy*E with varying intercepts and slopes by location, (3) the top predictors identified by both random forest models (*mcy*E, lagged *mcy*E, TDS, conductivity, chloride, $\text{UV}_{254}$, true colour, and 7-d total precipitation), and (4) the top five predictors from the passive sample random forest model (*mcy*E, lagged *mcy*E, TDS, conductivity, and chloride). The shared and passive predictor models included both fixed and group-specific slopes and intercepts. Missing and censored values in predictors were imputed within a joint modeling framework using Student's *t*-distribution submodels. Full model specifications are provided in the Supplementary Methods.
+
+The two models that predicted MC-LR as a function of *mcy*E concentration, year, and location-year-specific smooth terms for week of sampling had the lowest LOOIC values, with no meaningful difference between them (Table S4). Adding other predictors did not improve model performance and reduced model stability (large Pareto-*k*). Although the model without varying slopes for *mcy*E was slightly more stable, we selected the model with varying slopes because it most accurately reflects the data generating process. The relationship between the *mcy*E concentration and the probability of MC-LR detection is unlikely to be consistent across lakes. The *mcy*E gene is present in multiple genera with different MC-LR production rates [@beversdorf_microcystin_2015] and environmental conditions unique to each lake may further influence toxin production [@neilan_environmental_2013]. The selected model predicts the presence of extracellular MC-LR in passive sample, $i$, at location $j$, as:
+
+$$
+\text{MC-LR}_{ij} \sim \text{Bernoulli}(\pi_{ij})
+$$
+
+$$
+\text{logit}(\pi_{ij}) = f_{jt}(w_{ij}) + \beta_0 + \alpha_j + (\beta_{mcyE} + b_{\text{mcyE},j}) \cdot mcyE^{\text{imp}}_{ij} + \beta_{\text{year}} \cdot \text{year}_{ij}
+$$
+
+$$
+\begin{bmatrix} \alpha_j \\ b_{\text{mcye},j} \end{bmatrix} \sim \mathcal{N} \left( \begin{bmatrix} 0 \\ 0 \end{bmatrix}, \Sigma_b \right)
+$$
+
+Where $f_{jt}(w_{ij})$ represents a location- ($j$) and year- ($t$) specific smooth function of the week of sampling, and $\alpha_{j}$ and $b_{mcyE,j}$ are the random intercepts and slopes, respectively, for the $j^{th}$ location. This model accurately captured the proportion of MC-LR in passive samples over the entire data set and at each location (@fig-model-fits), despite large differences in proportions of MC-LR detections across the sample locations. Posterior predictive checks also confirmed that the predicted standard deviations matched the observed standard deviations (Figure S12).
+
+![Assessment of the logistic regression model used to predict the probability of detecting MC-LR in passive samplers. The predicted probabilities derived from the model closely matched the observed proportion of MC-LR detection in the data (**a**) and posterior draws from the model accurately capture the proportion of MC-LR detections at each sample location (**b**).](../figures/model-performance.png){#fig-model-fits width="100%"}
+
+## Probabilistic risk associated with *mcy*E varies by location, date, and year {#sec-results-probs}
+
+Posterior predictive draws from this model were used to estimate the probability of MC-LR detection over the range of observed *mcy*E values and sampling weeks for each combination of year and location. We used these probabilities to visualize how the *mcy*E gene concentrations associated with 50% (@fig-0.5prob), 75% and 95% (Figures S13 and S14) probabilities of detectable MC-LR change over time at each location in each year. These results illustrate that the probabilistic relationship between *mcy*E and detection of low concentrations of MC-LR varies considerably between locations — and over time at each location.
+
+For example, at INP there was a 50% probability of MC-LR at low *mcy*E concentrations early in the season (June through August), whereas at most other locations the *mcy*E concentrations required to reach 50% probability remain high until later in the summer or early fall, indicating that toxin production at INP becomes possible earlier in the season.
+
+Lake Fletcher stands out as the only location where the model predicted a 95% probability of MC-LR detection (Figure S12). At this location and at Shubenacadie Canal (SC) the model also predicted \>50% probability of MC-LR for any concentration of *mcy*E. This occurred in all three years at Lake Fletcher but only in 2024 at SC (note that SC was not sampled during 2022), and is in-line with the observed MC-LR detections. At Lake Fletcher we detected MC-LR in nearly every passive sample collected from early-August to October in each of the three years, while at SC every sample was positive for MC-LR from mid-August to November in 2024, but detections were rare during 2023 (@fig-all-toxins). These result suggests that Lake Fletcher may be a particularly suitable site for implementing targeted analysis to ensure MC-LR concentrations remain below regulatory guidelines and also suggests that there are external factors at SC that vary year-to-year and play an important role in toxin production.
+
+At most locations, the *mcy*E concentrations required to a reach a 50% probability of MC-LR detection were notably higher in 2023 than in 2022 and 2024 and the seasonal trends in predicted risk were shifted. This was most apparent at Kearney Lake, Lake Fletcher, Lake Charles 1, and SC — locations most impacted by the 2023 flooding event. Altered water chemistry, nutrient loads, and microbial community structure may have delayed and/or suppressed toxin production during that year. This highlights how extreme weather events can introduce variability in gene-toxin relationships, underscoring the importance of considering the broader environmental context when interpreting *mcy*E concentrations.
+
+This approach to evaluating the probability of detectable MC-LR emphasizes the need for tailored, location- and time-specific interpretation of qPCR results. A given *mcy*E concentration cannot be interpreted in isolation — the same gene copy concentration may imply elevated risk at one lake and negligible risk at another, depending on local conditions and seasonal timing — particularly when toxin concentrations are low. These findings reinforce the importance of context-specific interpretation of qPCR data and provide a framework for incorporating molecular tools into early warning systems for cyanotoxins.
+
+Although we observed consistent differences in *mcy*E–MC-LR relationships across locations and years, we did not characterize cyanobacterial community composition directly. It is plausible that variation in dominant genera (e.g., *Microcystis* vs. *Planktothrix*) and their respective *mcy* gene regulation could explain differences in probabilities. Additionally, unmeasured covariates such as light availability or grazing pressure could influence both *mcy*E expression and MC-LR release, introducing latent confounding into model predictions. Future work integrating 16S amplicon or metagenomic data could clarify these community-level dynamics.
+
+![*mcy*E gene concentrations associated with a 50% predicted probability of detectable MC-LR from the hierarchical Bayesian logistic regression model. The lines and ribbons represent the median and interquartile range of the predicted probability across 4000 posterior draws.](../figures/p0.5-plot.png){#fig-0.5prob width="100%"}
+
+# Conclusion
+
+Our results demonstrate that qPCR targeting the *mcy*E gene, when paired with passive sampling and appropriate modeling, can serve as an effective tool for understanding the probability of low concentrations of MC-LR in freshwater systems. However, we also show that the utility of *mcy*E as a predictor varies substantially across lakes and over time — even within a lake, the relationship between *mcy*E and MC-LR can differ substantially year-to-year.
+
+A given *mcy*E concentration may be associated with increased risk of MC-LR early in the summer at some locations — such as INP — but carry little implication until later in the season at others. Similarly, while *mcy*E was the strongest predictor overall, only two study lakes reached the 95% probability threshold for MC-LR detection, suggesting that predictive strength varies not just in timing but also in magnitude. These findings suggest that universal thresholds are likely not appropriate for identifying the presence of low concentrations of MC-LR — as observed in these study sites — and support the development of tailored, location-specific models that reflect the unique microbial and environmental conditions in each lake.
+
+Together, these insights reinforce the value of integrating molecular tools into toxin surveillance programs, but also emphasize the need for adaptive, context-sensitive interpretation. By modeling the probability of MC-LR detection in relation to gene concentration and time, we offer a flexible, data-informed approach for interpreting qPCR results — an approach that should improve management decision-making across diverse freshwater systems.
+
+# CRediT author statement
+
+**David J Redden** Conceptualization, Methodology, Software, Formal Analysis, Investigation, Writing - Original Draft preparation, Visualization. **Clarke Brown** Conceptualization, Methodology, Investigation, Writing - Review and Editing. **Morgan Harasymchuk** Investigation, Writing - Review and Editing. **Saksham Bafna** Investigation, Writing - Review and Editing. **Justin Laforest** - Investigation, Resources. **Nicole Taylor** - Conceptualization, Resources, Project Administration. **Lindsay Anderson** - Conceptualization, Resources. **Graham A. Gagnon** Conceptualization, Resources, Writing - Review and Editing, Supervision, Funding acquisition.
+
+# Acknowledgements
+
+This study was funded through support from the NSERC Alliance program (ALLRP 568507 - 21) and its member partners, which include LuminUltra Technologies Ltd, Mantech Inc., AGAT Laboratories, Halifax Water, AquiSense Technologies, CBCL Limited, City of Moncton, and Cape Breton Regional Municipality. The authors would also like to extend thanks to Heather Daurie from the Centre for Water Resources Studies at Dalhousie University for her technical support, and to Elizabeth Montgomery and Emma Wattie from Halifax Regional Municipality for their support throughout the study.
+
+\newpage
+
+# References {.unnumbered}
